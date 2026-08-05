@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, getCurrentFellow } from "@/lib/auth-utils";
 import { sendTemplatedEmail } from "@/lib/email";
 import type { UserRole, RubricCriterion, EvaluationScore } from "@/types/database";
 
@@ -44,11 +44,26 @@ export async function login(formData: FormData) {
         // Already signed out.
     }
 
-    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
 
-    revalidatePath("/admin", "layout");
-    redirect("/admin");
+    // Same Auth pool serves both staff (public.users) and Fellows
+    // (public.fellows.auth_user_id) — route based on which profile exists.
+    const userId = data.user.id;
+    const { data: staffProfile } = await supabaseClient.from('users').select('id').eq('id', userId).maybeSingle();
+    if (staffProfile) {
+        revalidatePath("/admin", "layout");
+        redirect("/admin");
+    }
+
+    const { data: fellowProfile } = await supabaseClient.from('fellows').select('id').eq('auth_user_id', userId).maybeSingle();
+    if (fellowProfile) {
+        revalidatePath("/portal", "layout");
+        redirect("/portal");
+    }
+
+    await supabaseClient.auth.signOut();
+    return { error: "This account isn't linked to a staff or Fellow profile yet. Contact your program coordinator." };
 }
 
 export async function logout() {
@@ -252,6 +267,46 @@ export async function updateFellow(id: string, updates: Record<string, any>) {
     return { success: true };
 }
 
+/** Provisions a Fellow's own portal login (separate from staff accounts — see getCurrentFellow). */
+export async function createFellowLogin(fellowId: string, password?: string) {
+    try {
+        const { data: fellow, error: fellowError } = await supabaseAdmin.from('fellows').select('*').eq('id', fellowId).single();
+        if (fellowError || !fellow) throw new Error('Fellow not found.');
+        if (fellow.auth_user_id) return { error: 'This fellow already has a portal login.' };
+
+        const tempPassword = password || 'CgapFellow@123';
+        let authUserId: string;
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email: fellow.email,
+            password: tempPassword,
+            email_confirm: true,
+            user_metadata: { full_name: fellow.name },
+        });
+
+        if (authError) {
+            if (authError.message.includes("already been registered") || authError.status === 422) {
+                const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+                const existing = listData.users.find(u => u.email?.toLowerCase() === fellow.email.toLowerCase());
+                if (!existing) throw new Error("Auth reports this email exists but it could not be located.");
+                authUserId = existing.id;
+            } else {
+                throw authError;
+            }
+        } else {
+            authUserId = authData.user.id;
+        }
+
+        const { error: linkError } = await supabaseAdmin.from('fellows').update({ auth_user_id: authUserId }).eq('id', fellowId);
+        if (linkError) throw linkError;
+
+        await logAction('Created Fellow portal login', fellowId, 'fellow', { email: fellow.email });
+        revalidatePath(`/admin/fellows/${fellowId}`);
+        return { success: true, tempPassword };
+    } catch (error: any) {
+        return { error: error.message };
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // ONBOARDING CHECKLIST
 // ─────────────────────────────────────────────────────────────────────────
@@ -317,7 +372,15 @@ export async function deleteChecklistItem(id: string) {
 // ─────────────────────────────────────────────────────────────────────────
 
 export async function getCurriculumForBatch(batchId: string) {
-    const { data: curriculum } = await supabaseAdmin.from('curricula').select('*').eq('batch_id', batchId).maybeSingle();
+    // .order + .limit(1) rather than .maybeSingle() — tolerates a batch that
+    // ended up with more than one curriculum row instead of erroring out.
+    const { data: curricula } = await supabaseAdmin
+        .from('curricula')
+        .select('*')
+        .eq('batch_id', batchId)
+        .order('created_at', { ascending: true })
+        .limit(1);
+    const curriculum = curricula?.[0];
     if (!curriculum) return null;
 
     const { data: phases } = await supabaseAdmin
@@ -335,6 +398,12 @@ export async function getCurriculumForBatch(batchId: string) {
 }
 
 export async function createCurriculum(batchId: string, name: string) {
+    // Idempotent — a batch should only ever have one curriculum. Returns the
+    // existing one instead of creating a duplicate if called again (e.g. a
+    // double-click, or a stale UI that couldn't tell one already existed).
+    const { data: existing } = await supabaseAdmin.from('curricula').select('*').eq('batch_id', batchId).order('created_at', { ascending: true }).limit(1);
+    if (existing?.[0]) return { success: true, curriculum: existing[0] };
+
     const { data, error } = await supabaseAdmin.from('curricula').insert({ batch_id: batchId, name }).select().single();
     if (error) return { error: error.message };
     revalidatePath('/admin/curriculum');
@@ -538,6 +607,97 @@ export async function getFellowEmailLog(fellowId: string) {
     const { data, error } = await supabaseAdmin.from('email_log').select('*').eq('fellow_id', fellowId).order('sent_at', { ascending: false });
     if (error) throw error;
     return data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FELLOW PORTAL (self-service) — identity is always resolved server-side via
+// getCurrentFellow(); a client can never pass in a fellow_id to act as.
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getMyOnboarding() {
+    const fellow = await getCurrentFellow();
+    if (!fellow) return { error: 'Not signed in as a Fellow.' };
+    const status = await getFellowOnboardingStatus(fellow.id);
+    return { success: true, fellow, checklist: status };
+}
+
+export async function submitMyOnboardingEvidence(checklistItemId: string, evidenceUrl: string) {
+    const fellow = await getCurrentFellow();
+    if (!fellow) return { error: 'Not signed in as a Fellow.' };
+
+    // Fellows may only ever touch their own row — scope the update by both
+    // ids so a tampered checklistItemId can't reach someone else's record.
+    const { data, error } = await supabaseAdmin
+        .from('fellow_onboarding_status')
+        .update({ status: 'submitted', evidence_url: evidenceUrl, submitted_at: new Date().toISOString() })
+        .eq('id', checklistItemId)
+        .eq('fellow_id', fellow.id)
+        .select()
+        .single();
+
+    if (error) return { error: error.message };
+    await logAction('Fellow submitted onboarding evidence', checklistItemId, 'onboarding_item', {});
+    revalidatePath('/portal');
+    return { success: true, item: data };
+}
+
+export async function getMyCurriculum() {
+    const fellow = await getCurrentFellow();
+    if (!fellow) return { error: 'Not signed in as a Fellow.' };
+    if (!fellow.batch_id) return { success: true, curriculum: null };
+
+    const curriculum = await getCurriculumForBatch(fellow.batch_id);
+    if (!curriculum) return { success: true, curriculum: null };
+
+    // Fellows only ever see the 'fellow' audience rubric, never 'reporting'.
+    const sanitized = {
+        ...curriculum,
+        phases: (curriculum.phases || []).map((p: any) => ({
+            ...p,
+            modules: (p.modules || []).map((m: any) => ({
+                ...m,
+                rubrics: (m.rubrics || []).filter((r: any) => r.audience === 'fellow'),
+            })),
+        })),
+    };
+
+    return { success: true, curriculum: sanitized };
+}
+
+export async function getMySubmissions() {
+    const fellow = await getCurrentFellow();
+    if (!fellow) return { error: 'Not signed in as a Fellow.' };
+
+    const { data, error } = await supabaseAdmin
+        .from('submissions')
+        .select(`*, module:modules ( name, phase_id ), evaluations ( id, total_score, fellow_feedback, created_at )`)
+        .eq('fellow_id', fellow.id)
+        .order('submitted_at', { ascending: false });
+    if (error) return { error: error.message };
+    return { success: true, submissions: data };
+}
+
+export async function submitMyModuleWork(input: { module_id: string; file_url?: string; link_url?: string; notes?: string }) {
+    const fellow = await getCurrentFellow();
+    if (!fellow) return { error: 'Not signed in as a Fellow.' };
+    if (!input.file_url && !input.link_url) return { error: 'Attach a file or a link before submitting.' };
+
+    const { data, error } = await supabaseAdmin
+        .from('submissions')
+        .insert({
+            fellow_id: fellow.id, // resolved server-side, never trusted from the client
+            module_id: input.module_id,
+            file_url: input.file_url,
+            link_url: input.link_url,
+            notes: input.notes,
+        })
+        .select()
+        .single();
+
+    if (error) return { error: error.message };
+    await logAction('Fellow submitted module work', data.id, 'submission', { module_id: input.module_id });
+    revalidatePath('/portal');
+    return { success: true, submission: data };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

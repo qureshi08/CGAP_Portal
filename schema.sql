@@ -130,7 +130,7 @@ create table public.fellow_onboarding_status (
 
 create table public.curricula (
   id uuid primary key default uuid_generate_v4(),
-  batch_id uuid references public.batches(id) on delete cascade,
+  batch_id uuid references public.batches(id) on delete cascade unique, -- one curriculum per batch
   name text not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );

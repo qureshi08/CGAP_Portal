@@ -7,7 +7,7 @@ import Logo from "@/components/Logo";
 import Link from "next/link";
 
 interface LoginFormProps {
-    activeSession: { email: string; fullName: string } | null;
+    activeSession: { email: string; fullName: string; href: string } | null;
 }
 
 export default function LoginForm({ activeSession }: LoginFormProps) {
@@ -53,7 +53,7 @@ export default function LoginForm({ activeSession }: LoginFormProps) {
                             </div>
                         </div>
                         <div className="flex gap-2">
-                            <Link href="/admin" className="flex-1 text-center px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-primary bg-white border border-primary/30 rounded-sm hover:bg-primary/5 transition-colors">
+                            <Link href={activeSession.href} className="flex-1 text-center px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-primary bg-white border border-primary/30 rounded-sm hover:bg-primary/5 transition-colors">
                                 Go to dashboard
                             </Link>
                             <button

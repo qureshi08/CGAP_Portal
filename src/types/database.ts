@@ -42,6 +42,7 @@ export interface Fellow {
     status: FellowStatus;
     status_reason?: string | null;
     joined_at?: string | null;
+    auth_user_id?: string | null;
     created_at: string;
     updated_at: string;
     batch?: { id: string; name: string; batch_number: number } | null;

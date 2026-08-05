@@ -1,18 +1,35 @@
 "use client";
 
 import { useState } from "react";
-import { updateOnboardingItemStatus, sendTemplatedEmailToFellow } from "@/app/actions";
-import { CheckCircle2, Circle, Clock, Mail, Send } from "lucide-react";
+import { updateOnboardingItemStatus, sendTemplatedEmailToFellow, createFellowLogin } from "@/app/actions";
+import { CheckCircle2, Circle, Clock, Mail, Send, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_STEPS = ["pending", "submitted", "verified"] as const;
 
-export default function FellowDetailClient({ fellow, initialChecklist, initialEmailLog, templates }: any) {
+export default function FellowDetailClient({ fellow: initialFellow, initialChecklist, initialEmailLog, templates }: any) {
+    const [fellow, setFellow] = useState(initialFellow);
     const [checklist, setChecklist] = useState(initialChecklist);
     const [emailLog, setEmailLog] = useState(initialEmailLog);
     const [templateId, setTemplateId] = useState(templates[0]?.id ?? "");
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [creatingLogin, setCreatingLogin] = useState(false);
+    const [tempPassword, setTempPassword] = useState<string | null>(null);
+    const [loginError, setLoginError] = useState<string | null>(null);
+
+    async function handleCreateLogin() {
+        setCreatingLogin(true);
+        setLoginError(null);
+        const result = await createFellowLogin(fellow.id);
+        setCreatingLogin(false);
+        if (result.error) {
+            setLoginError(result.error);
+            return;
+        }
+        setFellow((prev: any) => ({ ...prev, auth_user_id: "pending-refresh" }));
+        setTempPassword(result.tempPassword ?? null);
+    }
 
     const verifiedCount = checklist.filter((c: any) => c.status === "verified").length;
 
@@ -89,6 +106,26 @@ export default function FellowDetailClient({ fellow, initialChecklist, initialEm
             </div>
 
             <div className="space-y-5">
+                <div className="card">
+                    <h2 className="text-sm font-bold text-heading tracking-tight italic mb-3 flex items-center gap-1.5"><KeyRound className="w-3.5 h-3.5" /> Portal Login</h2>
+                    {fellow.auth_user_id ? (
+                        <div>
+                            <p className="text-[11.5px] text-primary font-semibold mb-1">✓ Login active</p>
+                            {tempPassword && (
+                                <p className="text-[10.5px] text-muted">Temporary password: <span className="font-mono font-bold text-heading">{tempPassword}</span> — share this with the Fellow securely; they can change it after signing in.</p>
+                            )}
+                        </div>
+                    ) : (
+                        <div>
+                            <p className="text-[11px] text-muted mb-2.5">This Fellow can't sign in to the portal yet.</p>
+                            <button onClick={handleCreateLogin} disabled={creatingLogin} className="btn-primary w-full !py-2 !text-[11.5px]">
+                                {creatingLogin ? "Creating…" : "Create Portal Login"}
+                            </button>
+                        </div>
+                    )}
+                    {loginError && <p className="text-[10.5px] text-rose-600 mt-2">{loginError}</p>}
+                </div>
+
                 <div className="card">
                     <h2 className="text-sm font-bold text-heading tracking-tight italic mb-3">Send Templated Email</h2>
                     {error && <p className="text-[11px] text-rose-600 mb-2">{error}</p>}
