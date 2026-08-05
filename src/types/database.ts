@@ -96,6 +96,18 @@ export interface Module {
     name: string;
     description?: string | null;
     order_index: number;
+    created_at: string;
+    tasks?: ModuleTask[];
+}
+
+// The actual submittable unit within a module — e.g. CS50's "Problem Set 1: C".
+// A module can have any number of these; nothing about the count is fixed.
+export interface ModuleTask {
+    id: string;
+    module_id: string;
+    name: string;
+    description?: string | null;
+    order_index: number;
     submission_type?: string | null;
     submission_instructions?: string | null;
     created_at: string;
@@ -112,7 +124,7 @@ export interface RubricCriterion {
 
 export interface Rubric {
     id: string;
-    module_id: string;
+    task_id: string;
     audience: RubricAudience;
     name: string;
     criteria: RubricCriterion[];
@@ -121,7 +133,7 @@ export interface Rubric {
 
 export interface ModuleEvaluator {
     id: string;
-    module_id: string;
+    task_id: string;
     evaluator_type: 'mentor' | 'volunteer';
     user_id?: string | null;
     user?: { full_name: string; email: string } | null;
@@ -140,14 +152,14 @@ export interface FellowPhaseProgress {
 export interface Submission {
     id: string;
     fellow_id: string;
-    module_id: string;
+    task_id: string;
     file_url?: string | null;
     link_url?: string | null;
     notes?: string | null;
     status: SubmissionStatus;
     submitted_at: string;
     fellow?: { name: string; email: string };
-    module?: { name: string; phase_id: string };
+    task?: { name: string; rubrics?: Rubric[]; module?: { name: string; phase_id: string } };
     evaluations?: Evaluation[];
 }
 

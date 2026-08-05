@@ -1,10 +1,10 @@
-import { getSubmissions, getFellows, getAllModules } from "@/app/actions";
+import { getSubmissions, getFellows, getAllModuleTasks } from "@/app/actions";
 import SubmissionsClient from "@/components/SubmissionsClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function SubmissionsPage() {
-    const [submissions, fellows, modules] = await Promise.all([getSubmissions(), getFellows(), getAllModules()]);
+    const [submissions, fellows, tasks] = await Promise.all([getSubmissions(), getFellows(), getAllModuleTasks()]);
 
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
@@ -15,7 +15,7 @@ export default async function SubmissionsPage() {
                 </h1>
                 <p className="text-[12px] text-muted mt-1.5">Log a Fellow's submission, then score it against the module's rubric.</p>
             </div>
-            <SubmissionsClient initialSubmissions={submissions} fellows={fellows} modules={modules} />
+            <SubmissionsClient initialSubmissions={submissions} fellows={fellows} tasks={tasks} />
         </div>
     );
 }

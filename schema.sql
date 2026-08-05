@@ -145,9 +145,25 @@ create table public.phases (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- A module is a named container/course (e.g. "CS50", "ISLR") — it is NOT
+-- itself submittable. Its Tasks are (PRD.md §6): CS50 alone has ~10 problem
+-- sets, each a distinct submission with its own rubric — a module needing
+-- only one submission is the exception, not the rule.
 create table public.modules (
   id uuid primary key default uuid_generate_v4(),
   phase_id uuid references public.phases(id) on delete cascade,
+  name text not null,
+  description text,
+  order_index integer not null default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- The actual submittable unit within a module — e.g. "Problem Set 1: C",
+-- "Problem Set 2: Arrays". A module can have any number of these, added,
+-- reordered, or dropped independently — nothing about the count is fixed.
+create table public.module_tasks (
+  id uuid primary key default uuid_generate_v4(),
+  module_id uuid references public.modules(id) on delete cascade,
   name text not null,
   description text,
   order_index integer not null default 0,
@@ -156,20 +172,21 @@ create table public.modules (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- A module can have more than one rubric — one per audience (PRD.md §4.4).
+-- A task can have more than one rubric — one per audience (PRD.md §4.4).
 create table public.rubrics (
   id uuid primary key default uuid_generate_v4(),
-  module_id uuid references public.modules(id) on delete cascade,
+  task_id uuid references public.module_tasks(id) on delete cascade,
   audience text not null default 'fellow', -- 'fellow' | 'reporting'
   name text not null,
   criteria jsonb not null default '[]',    -- [{ "key": "technical", "label": "Technical Depth", "max_score": 10, "weight": 1 }, ...]
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- Who is allowed/expected to evaluate a module's submissions.
+-- Who is allowed/expected to evaluate a task's submissions — this varies per
+-- task (some problem sets are Mentor-only, some bring in volunteer judges).
 create table public.module_evaluators (
   id uuid primary key default uuid_generate_v4(),
-  module_id uuid references public.modules(id) on delete cascade,
+  task_id uuid references public.module_tasks(id) on delete cascade,
   evaluator_type text not null, -- 'mentor' | 'volunteer'
   user_id uuid references public.users(id), -- set when a specific volunteer is invited
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -194,7 +211,7 @@ create table public.fellow_phase_progress (
 create table public.submissions (
   id uuid primary key default uuid_generate_v4(),
   fellow_id uuid references public.fellows(id) on delete cascade,
-  module_id uuid references public.modules(id) on delete cascade,
+  task_id uuid references public.module_tasks(id) on delete cascade,
   file_url text,
   link_url text,
   notes text,
@@ -298,6 +315,7 @@ alter table public.fellow_onboarding_status enable row level security;
 alter table public.curricula enable row level security;
 alter table public.phases enable row level security;
 alter table public.modules enable row level security;
+alter table public.module_tasks enable row level security;
 alter table public.rubrics enable row level security;
 alter table public.module_evaluators enable row level security;
 alter table public.fellow_phase_progress enable row level security;
@@ -324,6 +342,8 @@ create policy "Authenticated read access" on public.phases for select using (tru
 create policy "Authenticated write access" on public.phases for all using (true) with check (true);
 create policy "Authenticated read access" on public.modules for select using (true);
 create policy "Authenticated write access" on public.modules for all using (true) with check (true);
+create policy "Authenticated read access" on public.module_tasks for select using (true);
+create policy "Authenticated write access" on public.module_tasks for all using (true) with check (true);
 create policy "Authenticated read access" on public.rubrics for select using (true);
 create policy "Authenticated write access" on public.rubrics for all using (true) with check (true);
 create policy "Authenticated read access" on public.module_evaluators for select using (true);

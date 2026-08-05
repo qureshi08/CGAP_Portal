@@ -19,11 +19,11 @@ export default function PortalClient({ fellow, initialChecklist, curriculum, ini
     }
 
     const verifiedCount = checklist.filter((c: any) => c.status === "verified").length;
-    const submissionsByModule = new Map<string, any[]>();
+    const submissionsByTask = new Map<string, any[]>();
     for (const s of submissions) {
-        const list = submissionsByModule.get(s.module_id) ?? [];
+        const list = submissionsByTask.get(s.task_id) ?? [];
         list.push(s);
-        submissionsByModule.set(s.module_id, list);
+        submissionsByTask.set(s.task_id, list);
     }
 
     async function handleEvidence(itemId: string, url: string) {
@@ -36,10 +36,10 @@ export default function PortalClient({ fellow, initialChecklist, curriculum, ini
         await submitMyOnboardingEvidence(itemId, "");
     }
 
-    async function handleModuleSubmit(moduleId: string, payload: { file_url?: string; link_url?: string; notes: string }) {
+    async function handleTaskSubmit(taskId: string, payload: { file_url?: string; link_url?: string; notes: string }) {
         const isLink = payload.file_url ? false : true;
         const result = await submitMyModuleWork({
-            module_id: moduleId,
+            task_id: taskId,
             file_url: payload.file_url,
             link_url: isLink ? payload.link_url : undefined,
             notes: payload.notes,
@@ -137,7 +137,19 @@ export default function PortalClient({ fellow, initialChecklist, curriculum, ini
                                     {phase.modules.length === 0 ? (
                                         <p className="px-5 py-4 text-[11.5px] text-muted">No modules published for this phase yet.</p>
                                     ) : phase.modules.map((module: any) => (
-                                        <ModuleRow key={module.id} module={module} existing={submissionsByModule.get(module.id) ?? []} onSubmit={handleModuleSubmit} />
+                                        <div key={module.id} className="px-5 py-3.5">
+                                            <p className="text-[12.5px] font-bold text-heading">{module.name}</p>
+                                            {module.description && <p className="text-[10.5px] text-muted mt-0.5 mb-2">{module.description}</p>}
+                                            {(module.tasks || []).length === 0 ? (
+                                                <p className="text-[11px] text-muted italic mt-1">No tasks published for this module yet.</p>
+                                            ) : (
+                                                <div className="divide-y divide-border/60 border border-border rounded-md mt-2 overflow-hidden">
+                                                    {module.tasks.map((task: any) => (
+                                                        <TaskRow key={task.id} task={task} existing={submissionsByTask.get(task.id) ?? []} onSubmit={handleTaskSubmit} />
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     ))}
                                 </div>
                             </div>
@@ -158,7 +170,10 @@ export default function PortalClient({ fellow, initialChecklist, curriculum, ini
                         ) : submissions.filter((s: any) => s.evaluations?.length).map((s: any) => (
                             <div key={s.id} className="px-5 py-4">
                                 <div className="flex items-center justify-between">
-                                    <p className="text-[12.5px] font-semibold text-heading">{s.module?.name}</p>
+                                    <div>
+                                        <p className="text-[12.5px] font-semibold text-heading">{s.task?.name}</p>
+                                        <p className="text-[10px] text-muted">{s.task?.module?.name}</p>
+                                    </div>
                                     <span className="status-badge status-badge-primary">{s.evaluations[0]?.total_score ?? "—"}</span>
                                 </div>
                                 {s.evaluations.map((e: any) => (
@@ -175,7 +190,7 @@ export default function PortalClient({ fellow, initialChecklist, curriculum, ini
     );
 }
 
-function ModuleRow({ module, existing, onSubmit }: any) {
+function TaskRow({ task, existing, onSubmit }: any) {
     const [open, setOpen] = useState(false);
     const [notes, setNotes] = useState("");
     const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -192,7 +207,7 @@ function ModuleRow({ module, existing, onSubmit }: any) {
         setSubmitting(true);
         setError(null);
         const isUrl = fileUrl.startsWith("http") && fileUrl.includes("://") && !fileUrl.includes("supabase.co/storage");
-        const result = await onSubmit(module.id, isUrl ? { link_url: fileUrl, notes } : { file_url: fileUrl, notes });
+        const result = await onSubmit(task.id, isUrl ? { link_url: fileUrl, notes } : { file_url: fileUrl, notes });
         setSubmitting(false);
         if (result?.error) {
             setError(result.error);
@@ -204,11 +219,11 @@ function ModuleRow({ module, existing, onSubmit }: any) {
     }
 
     return (
-        <div className="px-5 py-4">
+        <div className="px-4 py-3">
             <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-3 text-left">
                 <div className="min-w-0">
-                    <p className="text-[12.5px] font-semibold text-heading">{module.name}</p>
-                    {module.submission_type && <p className="text-[10.5px] text-muted mt-0.5">{module.submission_type}</p>}
+                    <p className="text-[12px] font-semibold text-heading">{task.name}</p>
+                    {task.submission_type && <p className="text-[10.5px] text-muted mt-0.5">{task.submission_type}</p>}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     {latest && <span className="status-badge">{latest.status}</span>}
@@ -218,9 +233,9 @@ function ModuleRow({ module, existing, onSubmit }: any) {
 
             {open && (
                 <div className="mt-3 space-y-3">
-                    {module.description && <p className="text-[11.5px] text-body">{module.description}</p>}
-                    {module.submission_instructions && (
-                        <p className="text-[11px] text-muted bg-surface border border-border rounded-md p-2.5">{module.submission_instructions}</p>
+                    {task.description && <p className="text-[11.5px] text-body">{task.description}</p>}
+                    {task.submission_instructions && (
+                        <p className="text-[11px] text-muted bg-surface border border-border rounded-md p-2.5">{task.submission_instructions}</p>
                     )}
 
                     {existing.length > 0 && (

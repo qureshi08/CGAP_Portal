@@ -350,6 +350,7 @@ export async function updateOnboardingItemStatus(id: string, status: 'pending' |
 
     await logAction('Updated onboarding item', id, 'onboarding_item', { status });
     revalidatePath(`/admin/fellows/${data.fellow_id}`);
+    revalidatePath('/portal'); // the Fellow themself may be looking at this same checklist
     return { success: true };
 }
 
@@ -383,15 +384,24 @@ export async function getCurriculumForBatch(batchId: string) {
     const curriculum = curricula?.[0];
     if (!curriculum) return null;
 
+    // Module → Tasks → Rubrics/Evaluators. A module (e.g. "CS50") is a
+    // container; its Tasks (e.g. each problem set) are what's actually
+    // submitted and scored — see PRD.md §6.
     const { data: phases } = await supabaseAdmin
         .from('phases')
-        .select(`*, modules ( *, rubrics ( * ), module_evaluators ( *, user:users ( full_name, email ) ) )`)
+        .select(`*, modules ( *, module_tasks ( *, rubrics ( * ), module_evaluators ( *, user:users ( full_name, email ) ) ) )`)
         .eq('curriculum_id', curriculum.id)
         .order('order_index');
 
     const sortedPhases = (phases || []).map((p: any) => ({
         ...p,
-        modules: (p.modules || []).sort((a: any, b: any) => a.order_index - b.order_index),
+        modules: (p.modules || [])
+            .sort((a: any, b: any) => a.order_index - b.order_index)
+            .map((m: any) => ({
+                ...m,
+                tasks: (m.module_tasks || []).sort((a: any, b: any) => a.order_index - b.order_index),
+                module_tasks: undefined,
+            })),
     }));
 
     return { ...curriculum, phases: sortedPhases };
@@ -432,7 +442,7 @@ export async function deletePhase(id: string) {
     return { success: true };
 }
 
-export async function createModule(input: { phase_id: string; name: string; description?: string; order_index: number; submission_type?: string; submission_instructions?: string }) {
+export async function createModule(input: { phase_id: string; name: string; description?: string; order_index: number }) {
     const { data, error } = await supabaseAdmin.from('modules').insert(input).select().single();
     if (error) return { error: error.message };
     await logAction('Created module', data.id, 'module', input);
@@ -454,13 +464,37 @@ export async function deleteModule(id: string) {
     return { success: true };
 }
 
-export async function upsertRubric(input: { id?: string; module_id: string; audience: 'fellow' | 'reporting'; name: string; criteria: RubricCriterion[] }) {
+// A module's actual submittable units — e.g. CS50's problem sets. Add, edit,
+// reorder, or drop these freely; nothing about the count is fixed (PRD.md §6).
+export async function createModuleTask(input: { module_id: string; name: string; description?: string; order_index: number; submission_type?: string; submission_instructions?: string }) {
+    const { data, error } = await supabaseAdmin.from('module_tasks').insert(input).select().single();
+    if (error) return { error: error.message };
+    await logAction('Created module task', data.id, 'module_task', input);
+    revalidatePath('/admin/curriculum');
+    return { success: true, task: data };
+}
+
+export async function updateModuleTask(id: string, updates: Record<string, any>) {
+    const { error } = await supabaseAdmin.from('module_tasks').update(updates).eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function deleteModuleTask(id: string) {
+    const { error } = await supabaseAdmin.from('module_tasks').delete().eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function upsertRubric(input: { id?: string; task_id: string; audience: 'fellow' | 'reporting'; name: string; criteria: RubricCriterion[] }) {
     if (input.id) {
         const { error } = await supabaseAdmin.from('rubrics').update({ name: input.name, criteria: input.criteria }).eq('id', input.id);
         if (error) return { error: error.message };
     } else {
         const { error } = await supabaseAdmin.from('rubrics').insert({
-            module_id: input.module_id, audience: input.audience, name: input.name, criteria: input.criteria,
+            task_id: input.task_id, audience: input.audience, name: input.name, criteria: input.criteria,
         });
         if (error) return { error: error.message };
     }
@@ -475,8 +509,8 @@ export async function deleteRubric(id: string) {
     return { success: true };
 }
 
-export async function addModuleEvaluator(moduleId: string, evaluatorType: 'mentor' | 'volunteer', userId?: string) {
-    const { error } = await supabaseAdmin.from('module_evaluators').insert({ module_id: moduleId, evaluator_type: evaluatorType, user_id: userId ?? null });
+export async function addModuleEvaluator(taskId: string, evaluatorType: 'mentor' | 'volunteer', userId?: string) {
+    const { error } = await supabaseAdmin.from('module_evaluators').insert({ task_id: taskId, evaluator_type: evaluatorType, user_id: userId ?? null });
     if (error) return { error: error.message };
     revalidatePath('/admin/curriculum');
     return { success: true };
@@ -493,28 +527,28 @@ export async function removeModuleEvaluator(id: string) {
 // SUBMISSIONS & EVALUATIONS
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function getAllModules() {
+export async function getAllModuleTasks() {
     const { data, error } = await supabaseAdmin
-        .from('modules')
-        .select(`id, name, phase:phases ( name, curriculum:curricula ( batch_id ) )`)
+        .from('module_tasks')
+        .select(`id, name, module:modules ( id, name, phase:phases ( name, curriculum:curricula ( batch_id ) ) )`)
         .order('order_index');
     if (error) throw error;
     return data;
 }
 
-export async function getSubmissions(filters: { moduleId?: string; fellowId?: string } = {}) {
+export async function getSubmissions(filters: { taskId?: string; fellowId?: string } = {}) {
     let query = supabaseAdmin
         .from('submissions')
-        .select(`*, fellow:fellows ( name, email ), module:modules ( name, phase_id, rubrics ( * ) ), evaluations ( *, evaluator:users ( full_name, email ) )`)
+        .select(`*, fellow:fellows ( name, email ), task:module_tasks ( name, rubrics ( * ), module:modules ( name, phase_id ) ), evaluations ( *, evaluator:users ( full_name, email ) )`)
         .order('submitted_at', { ascending: false });
-    if (filters.moduleId) query = query.eq('module_id', filters.moduleId);
+    if (filters.taskId) query = query.eq('task_id', filters.taskId);
     if (filters.fellowId) query = query.eq('fellow_id', filters.fellowId);
     const { data, error } = await query;
     if (error) throw error;
     return data;
 }
 
-export async function createSubmission(input: { fellow_id: string; module_id: string; file_url?: string; link_url?: string; notes?: string }) {
+export async function createSubmission(input: { fellow_id: string; task_id: string; file_url?: string; link_url?: string; notes?: string }) {
     const { data, error } = await supabaseAdmin.from('submissions').insert(input).select().single();
     if (error) return { error: error.message };
     await logAction('Created submission', data.id, 'submission', input);
@@ -541,6 +575,7 @@ export async function scoreSubmission(input: {
     await supabaseAdmin.from('submissions').update({ status: 'scored' }).eq('id', input.submission_id);
     await logAction('Scored submission', input.submission_id, 'submission', { total_score: input.total_score });
     revalidatePath('/admin/submissions');
+    revalidatePath('/portal'); // the Fellow's "My Feedback" tab reads this same submission
     return { success: true };
 }
 
@@ -638,6 +673,11 @@ export async function submitMyOnboardingEvidence(checklistItemId: string, eviden
     if (error) return { error: error.message };
     await logAction('Fellow submitted onboarding evidence', checklistItemId, 'onboarding_item', {});
     revalidatePath('/portal');
+    // A Mentor may already be sitting on this Fellow's detail page — without
+    // revalidating that exact path too, Next's client-side router cache can
+    // keep serving them a stale view for up to ~30s after a soft navigation.
+    revalidatePath(`/admin/fellows/${fellow.id}`);
+    revalidatePath('/admin/fellows');
     return { success: true, item: data };
 }
 
@@ -656,7 +696,10 @@ export async function getMyCurriculum() {
             ...p,
             modules: (p.modules || []).map((m: any) => ({
                 ...m,
-                rubrics: (m.rubrics || []).filter((r: any) => r.audience === 'fellow'),
+                tasks: (m.tasks || []).map((t: any) => ({
+                    ...t,
+                    rubrics: (t.rubrics || []).filter((r: any) => r.audience === 'fellow'),
+                })),
             })),
         })),
     };
@@ -670,14 +713,14 @@ export async function getMySubmissions() {
 
     const { data, error } = await supabaseAdmin
         .from('submissions')
-        .select(`*, module:modules ( name, phase_id ), evaluations ( id, total_score, fellow_feedback, created_at )`)
+        .select(`*, task:module_tasks ( name, module:modules ( name, phase_id ) ), evaluations ( id, total_score, fellow_feedback, created_at )`)
         .eq('fellow_id', fellow.id)
         .order('submitted_at', { ascending: false });
     if (error) return { error: error.message };
     return { success: true, submissions: data };
 }
 
-export async function submitMyModuleWork(input: { module_id: string; file_url?: string; link_url?: string; notes?: string }) {
+export async function submitMyModuleWork(input: { task_id: string; file_url?: string; link_url?: string; notes?: string }) {
     const fellow = await getCurrentFellow();
     if (!fellow) return { error: 'Not signed in as a Fellow.' };
     if (!input.file_url && !input.link_url) return { error: 'Attach a file or a link before submitting.' };
@@ -686,7 +729,7 @@ export async function submitMyModuleWork(input: { module_id: string; file_url?: 
         .from('submissions')
         .insert({
             fellow_id: fellow.id, // resolved server-side, never trusted from the client
-            module_id: input.module_id,
+            task_id: input.task_id,
             file_url: input.file_url,
             link_url: input.link_url,
             notes: input.notes,
@@ -695,8 +738,10 @@ export async function submitMyModuleWork(input: { module_id: string; file_url?: 
         .single();
 
     if (error) return { error: error.message };
-    await logAction('Fellow submitted module work', data.id, 'submission', { module_id: input.module_id });
+    await logAction('Fellow submitted module work', data.id, 'submission', { task_id: input.task_id });
     revalidatePath('/portal');
+    revalidatePath('/admin/submissions');
+    revalidatePath(`/admin/fellows/${fellow.id}`);
     return { success: true, submission: data };
 }
 

@@ -12,7 +12,7 @@ const STATUS_CLASS: Record<string, string> = {
     scored: "status-badge-primary",
 };
 
-export default function SubmissionsClient({ initialSubmissions, fellows, modules }: any) {
+export default function SubmissionsClient({ initialSubmissions, fellows, tasks }: any) {
     const [submissions, setSubmissions] = useState(initialSubmissions);
     const [logModalOpen, setLogModalOpen] = useState(false);
     const [scoring, setScoring] = useState<any | null>(null);
@@ -39,7 +39,7 @@ export default function SubmissionsClient({ initialSubmissions, fellows, modules
                         <thead>
                             <tr className="bg-surface border-b border-border">
                                 <th className="px-4 py-3 text-[9px] font-bold text-muted uppercase tracking-[0.2em]">Fellow</th>
-                                <th className="px-4 py-3 text-[9px] font-bold text-muted uppercase tracking-[0.2em]">Module</th>
+                                <th className="px-4 py-3 text-[9px] font-bold text-muted uppercase tracking-[0.2em]">Module → Task</th>
                                 <th className="px-4 py-3 text-[9px] font-bold text-muted uppercase tracking-[0.2em]">Submitted</th>
                                 <th className="px-4 py-3 text-[9px] font-bold text-muted uppercase tracking-[0.2em]">Status</th>
                                 <th className="px-4 py-3 text-[9px] font-bold text-muted uppercase tracking-[0.2em] text-right">Action</th>
@@ -51,7 +51,7 @@ export default function SubmissionsClient({ initialSubmissions, fellows, modules
                             ) : submissions.map((s: any) => (
                                 <tr key={s.id} className="hover:bg-primary/[0.02] transition-colors">
                                     <td className="px-4 py-3 text-[12.5px] font-bold text-heading">{s.fellow?.name}</td>
-                                    <td className="px-4 py-3 text-[11.5px] text-body">{s.module?.name}</td>
+                                    <td className="px-4 py-3 text-[11.5px] text-body">{s.task?.module?.name} → {s.task?.name}</td>
                                     <td className="px-4 py-3 text-[11px] text-muted">{new Date(s.submitted_at).toLocaleDateString()}</td>
                                     <td className="px-4 py-3"><span className={cn("status-badge", STATUS_CLASS[s.status])}>{s.status}</span></td>
                                     <td className="px-4 py-3 text-right">
@@ -69,10 +69,10 @@ export default function SubmissionsClient({ initialSubmissions, fellows, modules
             {logModalOpen && (
                 <LogSubmissionModal
                     fellows={fellows}
-                    modules={modules}
+                    tasks={tasks}
                     onClose={() => setLogModalOpen(false)}
-                    onCreated={(sub: any, fellow: any, module: any) => {
-                        setSubmissions((prev: any) => [{ ...sub, fellow: { name: fellow.name, email: fellow.email }, module: { name: module.name }, evaluations: [] }, ...prev]);
+                    onCreated={(sub: any, fellow: any, task: any) => {
+                        setSubmissions((prev: any) => [{ ...sub, fellow: { name: fellow.name, email: fellow.email }, task: { name: task.name, module: task.module }, evaluations: [] }, ...prev]);
                         setLogModalOpen(false);
                     }}
                     onError={setError}
@@ -94,9 +94,9 @@ export default function SubmissionsClient({ initialSubmissions, fellows, modules
     );
 }
 
-function LogSubmissionModal({ fellows, modules, onClose, onCreated, onError }: any) {
+function LogSubmissionModal({ fellows, tasks, onClose, onCreated, onError }: any) {
     const [fellowId, setFellowId] = useState("");
-    const [moduleId, setModuleId] = useState("");
+    const [taskId, setTaskId] = useState("");
     const [linkUrl, setLinkUrl] = useState("");
     const [notes, setNotes] = useState("");
     const [saving, setSaving] = useState(false);
@@ -104,12 +104,12 @@ function LogSubmissionModal({ fellows, modules, onClose, onCreated, onError }: a
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setSaving(true);
-        const result = await createSubmission({ fellow_id: fellowId, module_id: moduleId, link_url: linkUrl || undefined, notes: notes || undefined });
+        const result = await createSubmission({ fellow_id: fellowId, task_id: taskId, link_url: linkUrl || undefined, notes: notes || undefined });
         setSaving(false);
         if (result.error) return onError(result.error);
         const fellow = fellows.find((f: any) => f.id === fellowId);
-        const module = modules.find((m: any) => m.id === moduleId);
-        onCreated(result.submission, fellow, module);
+        const task = tasks.find((t: any) => t.id === taskId);
+        onCreated(result.submission, fellow, task);
     }
 
     return (
@@ -123,10 +123,10 @@ function LogSubmissionModal({ fellows, modules, onClose, onCreated, onError }: a
                     </select>
                 </div>
                 <div>
-                    <label className="form-label">Module</label>
-                    <select required value={moduleId} onChange={e => setModuleId(e.target.value)} className="input-field">
-                        <option value="">Select module…</option>
-                        {modules.map((m: any) => <option key={m.id} value={m.id}>{m.phase?.name} → {m.name}</option>)}
+                    <label className="form-label">Task</label>
+                    <select required value={taskId} onChange={e => setTaskId(e.target.value)} className="input-field">
+                        <option value="">Select task…</option>
+                        {tasks.map((t: any) => <option key={t.id} value={t.id}>{t.module?.phase?.name} → {t.module?.name} → {t.name}</option>)}
                     </select>
                 </div>
                 <div><label className="form-label">Link (repo / video / dashboard)</label><input value={linkUrl} onChange={e => setLinkUrl(e.target.value)} className="input-field" /></div>
@@ -138,7 +138,7 @@ function LogSubmissionModal({ fellows, modules, onClose, onCreated, onError }: a
 }
 
 function ScoreModal({ submission, onClose, onScored, onError }: any) {
-    const rubrics = submission.module?.rubrics || [];
+    const rubrics = submission.task?.rubrics || [];
     const [rubricId, setRubricId] = useState(rubrics[0]?.id || "");
     const rubric = rubrics.find((r: any) => r.id === rubricId);
     const [scores, setScores] = useState<Record<string, number>>({});
@@ -175,7 +175,7 @@ function ScoreModal({ submission, onClose, onScored, onError }: any) {
     }
 
     return (
-        <ModalShell title={`Score: ${submission.fellow?.name} — ${submission.module?.name}`} onClose={onClose} wide>
+        <ModalShell title={`Score: ${submission.fellow?.name} — ${submission.task?.name}`} onClose={onClose} wide>
             <form onSubmit={handleSubmit} className="space-y-3">
                 {rubrics.length > 1 && (
                     <div>
