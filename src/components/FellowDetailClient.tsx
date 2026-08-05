@@ -2,10 +2,8 @@
 
 import { useState } from "react";
 import { updateOnboardingItemStatus, sendTemplatedEmailToFellow, createFellowLogin } from "@/app/actions";
-import { CheckCircle2, Circle, Clock, Mail, Send, KeyRound } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Mail, Send, KeyRound, ExternalLink, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const STATUS_STEPS = ["pending", "submitted", "verified"] as const;
 
 export default function FellowDetailClient({ fellow: initialFellow, initialChecklist, initialEmailLog, templates }: any) {
     const [fellow, setFellow] = useState(initialFellow);
@@ -33,12 +31,14 @@ export default function FellowDetailClient({ fellow: initialFellow, initialCheck
 
     const verifiedCount = checklist.filter((c: any) => c.status === "verified").length;
 
-    async function advance(item: any) {
-        const currentIdx = STATUS_STEPS.indexOf(item.status);
-        const next = STATUS_STEPS[Math.min(currentIdx + 1, STATUS_STEPS.length - 1)];
-        if (next === item.status) return;
-        setChecklist((prev: any[]) => prev.map(c => (c.id === item.id ? { ...c, status: next } : c)));
-        await updateOnboardingItemStatus(item.id, next);
+    async function verifyItem(item: any) {
+        setChecklist((prev: any[]) => prev.map(c => (c.id === item.id ? { ...c, status: "verified" } : c)));
+        await updateOnboardingItemStatus(item.id, "verified");
+    }
+
+    async function revertItem(item: any) {
+        setChecklist((prev: any[]) => prev.map(c => (c.id === item.id ? { ...c, status: "submitted" } : c)));
+        await updateOnboardingItemStatus(item.id, "submitted");
     }
 
     async function handleSendEmail() {
@@ -82,24 +82,50 @@ export default function FellowDetailClient({ fellow: initialFellow, initialCheck
                     </div>
                     <div className="divide-y divide-border/60">
                         {checklist.map((item: any) => (
-                            <button
-                                key={item.id}
-                                onClick={() => advance(item)}
-                                className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-primary/[0.02] transition-colors"
-                            >
-                                {item.status === "verified" ? (
-                                    <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
-                                ) : item.status === "submitted" ? (
-                                    <Clock className="w-4 h-4 text-amber-500 shrink-0" />
-                                ) : (
-                                    <Circle className="w-4 h-4 text-muted shrink-0" />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                    <p className={cn("text-[12.5px] font-semibold", item.status === "verified" ? "text-heading" : "text-body")}>{item.checklist_item?.label}</p>
-                                    {item.checklist_item?.description && <p className="text-[10.5px] text-muted mt-0.5">{item.checklist_item.description}</p>}
+                            <div key={item.id} className="px-5 py-3.5 hover:bg-primary/[0.02] transition-colors">
+                                <div className="flex items-center gap-3">
+                                    {item.status === "verified" ? (
+                                        <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+                                    ) : item.status === "submitted" ? (
+                                        <Clock className="w-4 h-4 text-amber-500 shrink-0" />
+                                    ) : (
+                                        <Circle className="w-4 h-4 text-muted shrink-0" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <p className={cn("text-[12.5px] font-semibold", item.status === "verified" ? "text-heading" : "text-body")}>{item.checklist_item?.label}</p>
+                                        {item.checklist_item?.description && <p className="text-[10.5px] text-muted mt-0.5">{item.checklist_item.description}</p>}
+                                    </div>
+                                    <span className={cn("status-badge shrink-0", item.status === "verified" && "status-badge-primary")}>{item.status}</span>
                                 </div>
-                                <span className={cn("status-badge shrink-0", item.status === "verified" && "status-badge-primary")}>{item.status}</span>
-                            </button>
+
+                                {item.status !== "pending" && (
+                                    <div className="flex items-center gap-3 mt-2.5 ml-7">
+                                        {item.evidence_url ? (
+                                            <a
+                                                href={item.evidence_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                                            >
+                                                <ExternalLink className="w-3 h-3" /> View evidence
+                                            </a>
+                                        ) : (
+                                            <span className="text-[10.5px] text-muted italic">No file attached — self-attested by the Fellow</span>
+                                        )}
+
+                                        {item.status === "submitted" && (
+                                            <button onClick={() => verifyItem(item)} className="btn-secondary !py-1 !px-2.5 !text-[10.5px] ml-auto">
+                                                <CheckCircle2 className="w-3 h-3" /> Verify
+                                            </button>
+                                        )}
+                                        {item.status === "verified" && (
+                                            <button onClick={() => revertItem(item)} className="btn-ghost !text-[10px] ml-auto">
+                                                <RotateCcw className="w-3 h-3" /> Undo verification
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         ))}
                     </div>
                 </div>
