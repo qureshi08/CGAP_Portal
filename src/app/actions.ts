@@ -89,6 +89,23 @@ export async function getUserRoles(userId: string): Promise<UserRole[]> {
 // SEED / SETUP
 // ─────────────────────────────────────────────────────────────────────────
 
+// Documents/code only — video and audio must be submitted as a link instead
+// (enforced client-side too, in UploadOrLink.tsx). Applied at the bucket
+// level so it can't be bypassed by calling the Storage API directly.
+const UPLOAD_BUCKET_CONFIG = {
+    public: true,
+    fileSizeLimit: '10MB',
+    allowedMimeTypes: [
+        'application/pdf',
+        'image/jpeg',
+        'image/png',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/zip',
+        'application/x-zip-compressed',
+    ],
+};
+
 export async function ensureSeedData() {
     try {
         const buckets = ['fellow-documents', 'submissions'];
@@ -96,7 +113,9 @@ export async function ensureSeedData() {
         const existingIds = existingBuckets?.map(b => b.id) || [];
         for (const id of buckets) {
             if (!existingIds.includes(id)) {
-                await supabaseAdmin.storage.createBucket(id, { public: true });
+                await supabaseAdmin.storage.createBucket(id, UPLOAD_BUCKET_CONFIG);
+            } else {
+                await supabaseAdmin.storage.updateBucket(id, UPLOAD_BUCKET_CONFIG);
             }
         }
     } catch (error) {
