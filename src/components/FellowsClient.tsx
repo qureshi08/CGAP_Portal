@@ -38,7 +38,7 @@ export default function FellowsClient({ initialFellows, batches }: { initialFell
             setError(result.error);
             return;
         }
-        setFellows(prev => [{ ...result.fellow, onboarding_progress: { total: 7, verified: 0 } }, ...prev]);
+        setFellows(prev => [{ ...result.fellow, onboarding_progress: { total: 7, verified: 0, awaitingReview: 0 } }, ...prev]);
         setIsModalOpen(false);
         setForm({ name: "", email: "", phone: "", cnic: "", track: "", batch_id: "" });
     }
@@ -86,7 +86,16 @@ export default function FellowsClient({ initialFellows, batches }: { initialFell
                                     <td className="px-4 py-3 text-[11.5px] text-body">{f.batch?.name ?? "—"}</td>
                                     <td className="px-4 py-3 text-[11.5px] text-body">{f.track ?? "—"}</td>
                                     <td className="px-4 py-3 text-[11.5px] text-body">
-                                        {f.onboarding_progress ? `${f.onboarding_progress.verified}/${f.onboarding_progress.total}` : "—"}
+                                        {f.onboarding_progress ? (
+                                            <div>
+                                                <span>{f.onboarding_progress.verified}/{f.onboarding_progress.total} verified</span>
+                                                {f.onboarding_progress.awaitingReview > 0 && (
+                                                    <p className="text-[10px] font-semibold text-amber-600 mt-0.5">
+                                                        {f.onboarding_progress.awaitingReview} awaiting your review
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ) : "—"}
                                     </td>
                                     <td className="px-4 py-3">
                                         <span className={cn("status-badge", STATUS_CLASS[f.status])}>{f.status}</span>

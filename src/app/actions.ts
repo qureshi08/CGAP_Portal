@@ -242,6 +242,11 @@ export async function getFellows() {
             onboarding_progress: {
                 total: statuses.length,
                 verified: statuses.filter((s: any) => s.status === 'verified').length,
+                // Submitted-but-not-yet-verified — items sitting in the Mentor's
+                // queue. Without this, "0/7 verified" looks identical whether a
+                // Fellow has done nothing or has finished everything and is
+                // just waiting on the Mentor to review it.
+                awaitingReview: statuses.filter((s: any) => s.status === 'submitted').length,
             },
         };
     });

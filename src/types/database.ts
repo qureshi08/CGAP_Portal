@@ -46,7 +46,7 @@ export interface Fellow {
     created_at: string;
     updated_at: string;
     batch?: { id: string; name: string; batch_number: number } | null;
-    onboarding_progress?: { total: number; verified: number };
+    onboarding_progress?: { total: number; verified: number; awaitingReview: number };
 }
 
 export interface OnboardingChecklistItem {
