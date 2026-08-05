@@ -1,0 +1,112 @@
+/*
+ * Convergent Business Technologies — Design Tokens (CSS Custom Properties)
+ * ─────────────────────────────────────────────────────────────────────────
+ * Framework-agnostic. Works in any HTML/CSS project — plain static sites,
+ * React, Vue, Svelte, whatever. No build step required.
+ *
+ * USAGE
+ *   <link rel="stylesheet" href="tokens/tokens.css">
+ * or
+ *   @import url("tokens/tokens.css");
+ *
+ * Then use any token as a normal CSS variable anywhere in your stylesheet:
+ *   .my-button { background: var(--cbt-primary); }
+ *
+ * NAMING
+ *   Every token is prefixed --cbt- so dropping this into an existing
+ *   project can't collide with that project's own --primary, --border,
+ *   --space-4, etc. If you're building a brand-new project from scratch
+ *   and don't need the prefix, feel free to find-and-replace `--cbt-`
+ *   with nothing — just check for collisions first.
+ *
+ * PAIRS WITH
+ *   fonts.css        — loads the actual Playfair Display / DM Sans / JetBrains Mono webfonts
+ *   components.css   — ready-to-use button/card/badge/input classes built on these tokens
+ *   tokens.json       — the same values in JSON, for non-CSS tooling (Figma tokens, mobile apps, Style Dictionary)
+ */
+
+:root {
+  /* ── Primary palette ───────────────────────────────────────────────── */
+  --cbt-primary: #00994D;        /* Botanical Green — the one dominant brand accent */
+  --cbt-primary-light: #00C060;
+  --cbt-primary-dark: #007A3D;   /* hover/active state for primary green elements */
+  --cbt-primary-muted: #E6F5ED;  /* light tint for badges, highlighted rows */
+
+  /* ── Neutrals ──────────────────────────────────────────────────────── */
+  --cbt-white: #FFFFFF;
+  --cbt-surface: #F7F8F7;        /* "Bone" — alternate section background */
+  --cbt-border: #E2E8E4;         /* use sparingly — component-level only, never page dividers */
+  --cbt-muted: #6B7280;          /* "Steel" — secondary/caption text */
+  --cbt-body: #374151;           /* "Graphite" — primary body copy */
+  --cbt-heading: #0C1A10;        /* "Ink" — headings, high-contrast text */
+  --cbt-footer: #0e0e0e;
+
+  /* ── Status ────────────────────────────────────────────────────────── */
+  --cbt-success: #00994D;        /* reuses primary green — no separate success color */
+  --cbt-warning: #F59E0B;
+  --cbt-error: #EF4444;
+  --cbt-info: #3B82F6;
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --cbt-font-heading: "Playfair Display", Georgia, "Times New Roman", serif;
+  --cbt-font-body: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  --cbt-font-mono: "JetBrains Mono", "Courier New", monospace;
+
+  /* Type scale */
+  --cbt-text-xs: 0.75rem;    /* 12px — labels, legal */
+  --cbt-text-sm: 0.875rem;   /* 14px — captions, metadata */
+  --cbt-text-base: 1rem;     /* 16px — body default */
+  --cbt-text-lg: 1.125rem;   /* 18px — lead paragraphs */
+  --cbt-text-xl: 1.25rem;    /* 20px — card titles */
+  --cbt-text-2xl: 1.5rem;    /* 24px — section subtitles */
+  --cbt-text-3xl: 1.875rem;  /* 30px — section headings */
+  --cbt-text-4xl: 2.25rem;   /* 36px — page titles */
+  --cbt-text-5xl: 3rem;      /* 48px — hero headings */
+  --cbt-text-6xl: 3.75rem;   /* 60px — large hero display */
+
+  /* ── Spacing scale ─────────────────────────────────────────────────── */
+  --cbt-space-1: 0.25rem;   /* 4px */
+  --cbt-space-2: 0.5rem;    /* 8px */
+  --cbt-space-3: 0.75rem;   /* 12px */
+  --cbt-space-4: 1rem;      /* 16px */
+  --cbt-space-5: 1.25rem;   /* 20px */
+  --cbt-space-6: 1.5rem;    /* 24px */
+  --cbt-space-8: 2rem;      /* 32px */
+  --cbt-space-10: 2.5rem;   /* 40px */
+  --cbt-space-12: 3rem;     /* 48px */
+  --cbt-space-16: 4rem;     /* 64px */
+  --cbt-space-20: 5rem;     /* 80px */
+  --cbt-space-24: 6rem;     /* 96px */
+
+  /* ── Border radius ─────────────────────────────────────────────────── */
+  --cbt-radius-sm: 6px;   /* buttons, inputs */
+  --cbt-radius-md: 12px;  /* cards, modals */
+  --cbt-radius-lg: 16px;  /* large containers */
+
+  /* ── Shadows (green-tinted — a deliberate brand signature) ────────────*/
+  --cbt-shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.06);
+  --cbt-shadow-premium: 0 12px 40px rgba(0, 153, 77, 0.09);
+  --cbt-shadow-deep: 0 12px 40px rgba(0, 153, 77, 0.12);
+  --cbt-shadow-nav: 0 2px 16px rgba(0, 0, 0, 0.06);
+  --cbt-shadow-dropdown: 0 12px 40px rgba(0, 0, 0, 0.08);
+
+  /* ── Layout ────────────────────────────────────────────────────────── */
+  --cbt-container-max: 1200px;
+  --cbt-container-wide: 1440px;
+  --cbt-container-prose: 720px;
+
+  /* ── Motion ────────────────────────────────────────────────────────── */
+  --cbt-duration-fast: 0.15s;
+  --cbt-duration-base: 0.2s;
+  --cbt-duration-slow: 0.35s;
+  --cbt-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Respect reduced-motion preferences by default — matches source product behavior */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

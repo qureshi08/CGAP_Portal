@@ -1,0 +1,214 @@
+/*
+ * Convergent Business Technologies — Component Classes
+ * ─────────────────────────────────────────────────────────────────────────
+ * Ready-to-use classes built on tokens.css. Load tokens.css (and ideally
+ * fonts.css) FIRST, then this file:
+ *
+ *   <link rel="stylesheet" href="tokens/fonts.css">
+ *   <link rel="stylesheet" href="tokens/tokens.css">
+ *   <link rel="stylesheet" href="tokens/components.css">
+ *
+ * Then just use the classes directly in your markup:
+ *   <button class="cbt-btn cbt-btn-primary">Save changes</button>
+ *
+ * All class names are prefixed cbt- to avoid colliding with an existing
+ * project's own .btn-primary/.card/etc.
+ */
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+
+.cbt-btn {
+  display: inline-block;
+  font-family: var(--cbt-font-body);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 22px;
+  border-radius: var(--cbt-radius-sm);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--cbt-duration-base) var(--cbt-ease),
+              transform var(--cbt-duration-base) var(--cbt-ease);
+}
+
+.cbt-btn-primary {
+  background: var(--cbt-primary);
+  color: var(--cbt-white);
+}
+.cbt-btn-primary:hover {
+  background: var(--cbt-primary-dark);
+  transform: translateY(-1px);
+}
+
+.cbt-btn-primary-v2 {
+  background: var(--cbt-heading);
+  color: var(--cbt-white);
+}
+.cbt-btn-primary-v2:hover {
+  background: var(--cbt-primary);
+  transform: translateY(-1px);
+}
+
+.cbt-btn-secondary {
+  background: transparent;
+  color: var(--cbt-primary);
+  border: 2px solid var(--cbt-primary);
+  padding: 8px 20px; /* 2px border eats into the standard padding */
+}
+.cbt-btn-secondary:hover {
+  background: rgba(0, 153, 77, 0.05);
+  transform: translateY(-1px);
+}
+
+.cbt-btn-outline {
+  background: transparent;
+  color: var(--cbt-primary);
+  border: 2px solid var(--cbt-primary);
+  padding: 8px 20px;
+}
+.cbt-btn-outline:hover {
+  background: var(--cbt-primary);
+  color: var(--cbt-white);
+  transform: translateY(-1px);
+}
+
+.cbt-btn-ghost {
+  background: transparent;
+  color: var(--cbt-body);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 10px 4px;
+}
+.cbt-btn-ghost:hover {
+  color: var(--cbt-primary);
+}
+
+.cbt-btn-cta-white {
+  background: var(--cbt-white);
+  color: var(--cbt-heading);
+  font-size: 14px;
+  padding: 12px 28px;
+  border-radius: 7px;
+}
+.cbt-btn-cta-white:hover {
+  background: var(--cbt-primary);
+  color: var(--cbt-white);
+  transform: translateY(-1px);
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────── */
+
+.cbt-card {
+  background: var(--cbt-white);
+  border: 1px solid var(--cbt-border);
+  border-radius: var(--cbt-radius-md);
+  padding: 1.75rem;
+  box-shadow: var(--cbt-shadow-soft);
+  transition: box-shadow var(--cbt-duration-slow) var(--cbt-ease),
+              transform var(--cbt-duration-slow) var(--cbt-ease);
+}
+.cbt-card:hover {
+  box-shadow: var(--cbt-shadow-premium);
+  transform: translateY(-3px);
+}
+
+.cbt-card-compact {
+  background: var(--cbt-white);
+  border: 1px solid var(--cbt-border);
+  border-radius: 11px;
+  padding: 1.25rem;
+  box-shadow: var(--cbt-shadow-soft);
+  transition: border-color var(--cbt-duration-base) var(--cbt-ease),
+              box-shadow var(--cbt-duration-base) var(--cbt-ease);
+}
+.cbt-card-compact:hover {
+  border-color: var(--cbt-primary);
+  box-shadow: 0 6px 20px rgba(0, 153, 77, 0.09);
+}
+
+/* ── Forms ───────────────────────────────────────────────────────────── */
+
+.cbt-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--cbt-border);
+  border-radius: var(--cbt-radius-sm);
+  font-family: var(--cbt-font-body);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--cbt-body);
+  background: var(--cbt-white);
+  transition: border-color var(--cbt-duration-base) var(--cbt-ease),
+              box-shadow var(--cbt-duration-base) var(--cbt-ease);
+}
+.cbt-input:focus {
+  outline: none;
+  border-color: var(--cbt-primary);
+  box-shadow: 0 0 0 3px rgba(0, 153, 77, 0.15);
+}
+
+.cbt-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--cbt-body);
+  margin-bottom: 6px;
+}
+
+/* ── Status badges ───────────────────────────────────────────────────── */
+
+.cbt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--cbt-font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--cbt-surface);
+  border: 1px solid var(--cbt-border);
+  color: var(--cbt-body);
+}
+
+.cbt-badge-primary {
+  background: var(--cbt-primary-muted);
+  border-color: rgba(0, 153, 77, 0.25);
+  color: var(--cbt-primary-dark);
+}
+
+/* ── Pull-quote / callout ────────────────────────────────────────────── */
+
+.cbt-quote {
+  background: var(--cbt-primary-muted);
+  border-left: 3px solid var(--cbt-primary);
+  border-radius: 0 var(--cbt-radius-md) var(--cbt-radius-md) 0;
+  padding: 22px;
+}
+
+/* ── Typographic utilities ───────────────────────────────────────────── */
+
+.cbt-eyebrow {
+  font-family: var(--cbt-font-body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cbt-primary);
+}
+
+.cbt-heading {
+  font-family: var(--cbt-font-heading);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--cbt-heading);
+}
+
+.cbt-accent {
+  font-family: var(--cbt-font-heading);
+  font-style: italic;
+  color: var(--cbt-primary);
+}

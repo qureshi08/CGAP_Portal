@@ -1,0 +1,243 @@
+@import "tailwindcss";
+
+/*
+  CGAP PORTAL — DESIGN SYSTEM v1
+  Mirrors the CBT brand kit (brand-kit/tokens/tokens.css) so this app stays
+  visually consistent with the Recruitment Portal. Source of truth for values:
+  brand-kit/03-color-palette.md, 04-typography.md, 06-ui-components.md.
+*/
+
+@theme {
+  /* ─── COLORS ─── */
+  --color-primary: #00994D;
+  --color-primary-light: #00C060;
+  --color-primary-dark: #007A3D;
+  --color-primary-muted: #E6F5ED;
+
+  --color-white: #FFFFFF;
+  --color-surface: #F7F8F7;
+  --color-border: #E2E8E4;
+  --color-muted: #6B7280;
+  --color-body: #374151;
+  --color-heading: #111827;
+  --color-dark: #0C1A10;
+  --color-footer: #0e0e0e;
+
+  --color-success: #00994D;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+
+  /* ─── TYPOGRAPHY ─── */
+  --font-heading: "Playfair Display", Georgia, serif;
+  --font-sans: "DM Sans", "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+  --text-6xl: 3.75rem;
+
+  /* ─── LAYOUT ─── */
+  --container-max: 1200px;
+  --container-wide: 1440px;
+  --container-prose: 720px;
+  --container-px: 24px;
+  --section-py: 5rem;
+
+  /* ─── RADII ─── */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* ─── SHADOWS ─── */
+  --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.06);
+  --shadow-premium: 0 12px 40px rgba(0, 153, 77, 0.09);
+  --shadow-deep: 0 12px 40px rgba(0, 153, 77, 0.12);
+  --shadow-nav: 0 2px 16px rgba(0, 0, 0, 0.06);
+  --shadow-dropdown: 0 12px 40px rgba(0, 0, 0, 0.08);
+
+  /* ─── MOTION ─── */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+  --transition-slow: 0.35s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── Base Styles ─────────────────────────────────────────── */
+@layer base {
+  body {
+    @apply bg-white text-body font-sans antialiased;
+    font-size: var(--text-base);
+    line-height: 1.7;
+  }
+
+  h1, h2, h3 {
+    @apply text-heading font-bold leading-tight;
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+
+  h4, h5, h6 {
+    @apply text-heading leading-tight;
+    font-family: var(--font-heading);
+    font-weight: 600;
+  }
+
+  a { color: inherit; transition: var(--transition-base); }
+}
+
+/* ─── Layout & Component Utilities ────────────────────────── */
+@layer components {
+  .section-tag {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    margin-bottom: 14px;
+  }
+
+  .italic-accent {
+    font-family: var(--font-heading);
+    font-style: italic;
+    color: var(--color-primary);
+  }
+
+  .uppercase-label {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-muted);
+  }
+
+  .card {
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-soft);
+    transition: box-shadow 0.25s var(--ease), transform 0.25s var(--ease);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 6px;
+    background: var(--color-primary);
+    color: var(--color-white);
+    border: 2px solid transparent;
+    transition: background 0.2s var(--ease), transform 0.15s;
+    cursor: pointer;
+  }
+  .btn-primary:hover { background: var(--color-primary-dark); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-primary);
+    border: 2px solid var(--color-primary);
+    transition: background 0.2s var(--ease), transform 0.15s;
+    cursor: pointer;
+  }
+  .btn-secondary:hover { background: var(--color-primary-muted); transform: translateY(-1px); }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    color: var(--color-body);
+    font-weight: 500;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-ghost:hover { color: var(--color-primary); }
+
+  .input-field {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    background: var(--color-white);
+    color: var(--color-body);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    outline: none;
+  }
+  .input-field:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0, 153, 77, 0.15);
+  }
+
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-body);
+    margin-bottom: 6px;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-body);
+    line-height: 1.2;
+  }
+  .status-badge-primary {
+    background: var(--color-primary-muted);
+    border-color: rgba(0, 153, 77, 0.25);
+    color: var(--color-primary-dark);
+  }
+  .status-badge-warning { background: #FEF3C7; border-color: #FDE68A; color: #92400E; }
+  .status-badge-error { background: #FEE2E2; border-color: #FECACA; color: #991B1B; }
+
+  .grid-bg {
+    background-image: radial-gradient(var(--color-border) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
+}

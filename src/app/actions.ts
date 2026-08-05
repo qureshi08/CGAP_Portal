@@ -1,0 +1,566 @@
+"use server";
+
+import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createClient } from "@/lib/supabase-server";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth-utils";
+import { sendTemplatedEmail } from "@/lib/email";
+import type { UserRole, RubricCriterion, EvaluationScore } from "@/types/database";
+
+// ─────────────────────────────────────────────────────────────────────────
+// AUDIT LOGGING
+// ─────────────────────────────────────────────────────────────────────────
+
+async function logAction(action: string, entityId: string, entityType: string, details: any = {}) {
+    try {
+        const user = await getCurrentUser();
+        await supabaseAdmin.from('audit_logs').insert({
+            user_id: user?.id ?? null,
+            user_name: user?.full_name ?? 'System',
+            action,
+            entity_id: entityId,
+            entity_type: entityType,
+            details,
+        });
+    } catch (error) {
+        console.error("Audit logging failed:", error);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function login(formData: FormData) {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+    const supabaseClient = await createClient();
+
+    try {
+        await supabaseClient.auth.signOut();
+    } catch {
+        // Already signed out.
+    }
+
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) return { error: error.message };
+
+    revalidatePath("/admin", "layout");
+    redirect("/admin");
+}
+
+export async function logout() {
+    const supabaseClient = await createClient();
+    await supabaseClient.auth.signOut();
+    revalidatePath("/", "layout");
+    redirect("/login");
+}
+
+export async function getUserRoles(userId: string): Promise<UserRole[]> {
+    // Must use supabaseAdmin — the anon client has no session context inside
+    // Server Actions and would silently return [] for every user.
+    const { data, error } = await supabaseAdmin
+        .from('user_roles')
+        .select(`roles ( name )`)
+        .eq('user_id', userId);
+
+    if (error || !data) return [];
+    return data.map((d: any) => d.roles.name as UserRole);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SEED / SETUP
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function ensureSeedData() {
+    try {
+        const buckets = ['fellow-documents', 'submissions'];
+        const { data: existingBuckets } = await supabaseAdmin.storage.listBuckets();
+        const existingIds = existingBuckets?.map(b => b.id) || [];
+        for (const id of buckets) {
+            if (!existingIds.includes(id)) {
+                await supabaseAdmin.storage.createBucket(id, { public: true });
+            }
+        }
+    } catch (error) {
+        console.error("ensureSeedData failed:", error);
+    }
+}
+
+export async function createStaffUser(fullName: string, email: string, roleNames: UserRole[], password?: string) {
+    try {
+        let userId: string;
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email,
+            password: password || 'Cgap@123456',
+            email_confirm: true,
+            user_metadata: { full_name: fullName },
+        });
+
+        if (authError) {
+            if (authError.message.includes("already been registered") || authError.status === 422) {
+                const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+                const existing = listData.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+                if (!existing) throw new Error("User exists in Auth but could not be located.");
+                userId = existing.id;
+            } else {
+                throw authError;
+            }
+        } else {
+            userId = authData.user.id;
+        }
+
+        await supabaseAdmin.from('users').upsert({ id: userId, email, full_name: fullName });
+
+        // Reset roles to exactly what was selected.
+        await supabaseAdmin.from('user_roles').delete().eq('user_id', userId);
+        const { data: roles } = await supabaseAdmin.from('roles').select('id, name').in('name', roleNames);
+        if (roles?.length) {
+            await supabaseAdmin.from('user_roles').insert(
+                roles.map(r => ({ user_id: userId, role_id: r.id }))
+            );
+        }
+
+        await logAction('Created staff user', userId, 'user', { email, roles: roleNames });
+        revalidatePath('/admin/mentors');
+        return { success: true };
+    } catch (error: any) {
+        return { error: error.message };
+    }
+}
+
+export async function getStaffUsers() {
+    const { data, error } = await supabaseAdmin
+        .from('users')
+        .select(`id, email, full_name, created_at, user_roles ( roles ( name ) )`)
+        .order('full_name');
+    if (error) throw error;
+    return (data || []).map((u: any) => ({
+        ...u,
+        roles: (u.user_roles || []).map((ur: any) => ur.roles.name),
+    }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// BATCHES
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getBatches() {
+    const { data, error } = await supabaseAdmin
+        .from('batches')
+        .select(`*, batch_mentors ( users ( id, full_name, email ) ), fellows ( id )`)
+        .order('batch_number', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((b: any) => ({
+        ...b,
+        mentors: (b.batch_mentors || []).map((bm: any) => bm.users),
+        fellow_count: (b.fellows || []).length,
+    }));
+}
+
+export async function createBatch(input: { name: string; batch_number: number; status: string; start_date?: string | null; notes?: string | null }) {
+    const { data, error } = await supabaseAdmin.from('batches').insert(input).select().single();
+    if (error) return { error: error.message };
+    await logAction('Created batch', data.id, 'batch', input);
+    revalidatePath('/admin/batches');
+    return { success: true, batch: data };
+}
+
+export async function updateBatch(id: string, updates: Record<string, any>) {
+    const { error } = await supabaseAdmin.from('batches').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) return { error: error.message };
+    await logAction('Updated batch', id, 'batch', updates);
+    revalidatePath('/admin/batches');
+    return { success: true };
+}
+
+export async function assignMentorToBatch(batchId: string, userId: string) {
+    const { error } = await supabaseAdmin.from('batch_mentors').insert({ batch_id: batchId, user_id: userId });
+    if (error) return { error: error.message };
+    await logAction('Assigned mentor to batch', batchId, 'batch', { userId });
+    revalidatePath('/admin/batches');
+    return { success: true };
+}
+
+export async function removeMentorFromBatch(batchId: string, userId: string) {
+    const { error } = await supabaseAdmin.from('batch_mentors').delete().eq('batch_id', batchId).eq('user_id', userId);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/batches');
+    return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FELLOWS
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getFellows() {
+    const { data, error } = await supabaseAdmin
+        .from('fellows')
+        .select(`*, batch:batches ( id, name, batch_number ), fellow_onboarding_status ( status )`)
+        .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((f: any) => {
+        const statuses = f.fellow_onboarding_status || [];
+        return {
+            ...f,
+            onboarding_progress: {
+                total: statuses.length,
+                verified: statuses.filter((s: any) => s.status === 'verified').length,
+            },
+        };
+    });
+}
+
+export async function getFellow(id: string) {
+    const { data, error } = await supabaseAdmin
+        .from('fellows')
+        .select(`*, batch:batches ( id, name, batch_number )`)
+        .eq('id', id)
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+export async function createFellow(input: {
+    name: string; email: string; phone?: string; cnic?: string; track?: string;
+    batch_id?: string; source_candidate_ref?: string; ai_score?: number; merit_rank?: number;
+}) {
+    const { data, error } = await supabaseAdmin.from('fellows').insert(input).select().single();
+    if (error) return { error: error.message };
+
+    // Seed the fellow's onboarding checklist from the active template.
+    const { data: items } = await supabaseAdmin.from('onboarding_checklist_items').select('id').eq('is_active', true);
+    if (items?.length) {
+        await supabaseAdmin.from('fellow_onboarding_status').insert(
+            items.map(i => ({ fellow_id: data.id, checklist_item_id: i.id }))
+        );
+    }
+
+    await logAction('Created fellow', data.id, 'fellow', input);
+    revalidatePath('/admin/fellows');
+    return { success: true, fellow: data };
+}
+
+export async function updateFellow(id: string, updates: Record<string, any>) {
+    const { error } = await supabaseAdmin.from('fellows').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) return { error: error.message };
+    await logAction('Updated fellow', id, 'fellow', updates);
+    revalidatePath('/admin/fellows');
+    revalidatePath(`/admin/fellows/${id}`);
+    return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ONBOARDING CHECKLIST
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getOnboardingChecklistItems() {
+    const { data, error } = await supabaseAdmin.from('onboarding_checklist_items').select('*').order('order_index');
+    if (error) throw error;
+    return data;
+}
+
+export async function getFellowOnboardingStatus(fellowId: string) {
+    const { data, error } = await supabaseAdmin
+        .from('fellow_onboarding_status')
+        .select(`*, checklist_item:onboarding_checklist_items ( * )`)
+        .eq('fellow_id', fellowId);
+    if (error) throw error;
+    return (data || []).sort((a: any, b: any) => (a.checklist_item?.order_index ?? 0) - (b.checklist_item?.order_index ?? 0));
+}
+
+export async function updateOnboardingItemStatus(id: string, status: 'pending' | 'submitted' | 'verified', evidenceUrl?: string) {
+    const user = await getCurrentUser();
+    const updates: Record<string, any> = { status };
+    if (status === 'submitted') updates.submitted_at = new Date().toISOString();
+    if (evidenceUrl) updates.evidence_url = evidenceUrl;
+    if (status === 'verified') {
+        updates.verified_by = user?.id ?? null;
+        updates.verified_at = new Date().toISOString();
+    }
+
+    const { data, error } = await supabaseAdmin.from('fellow_onboarding_status').update(updates).eq('id', id).select().single();
+    if (error) return { error: error.message };
+
+    // If every item for this fellow is now verified, flip fellow status Onboarding -> Active.
+    if (status === 'verified') {
+        const { data: all } = await supabaseAdmin.from('fellow_onboarding_status').select('status').eq('fellow_id', data.fellow_id);
+        const allVerified = (all || []).every((s: any) => s.status === 'verified');
+        if (allVerified) {
+            await supabaseAdmin.from('fellows').update({ status: 'Active', joined_at: new Date().toISOString() }).eq('id', data.fellow_id);
+        }
+    }
+
+    await logAction('Updated onboarding item', id, 'onboarding_item', { status });
+    revalidatePath(`/admin/fellows/${data.fellow_id}`);
+    return { success: true };
+}
+
+export async function createChecklistItem(input: { label: string; description?: string; order_index: number; requires_evidence: boolean }) {
+    const { error } = await supabaseAdmin.from('onboarding_checklist_items').insert(input);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/settings/onboarding');
+    return { success: true };
+}
+
+export async function deleteChecklistItem(id: string) {
+    const { error } = await supabaseAdmin.from('onboarding_checklist_items').update({ is_active: false }).eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/settings/onboarding');
+    return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CURRICULUM: CURRICULA / PHASES / MODULES / RUBRICS
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getCurriculumForBatch(batchId: string) {
+    const { data: curriculum } = await supabaseAdmin.from('curricula').select('*').eq('batch_id', batchId).maybeSingle();
+    if (!curriculum) return null;
+
+    const { data: phases } = await supabaseAdmin
+        .from('phases')
+        .select(`*, modules ( *, rubrics ( * ), module_evaluators ( *, user:users ( full_name, email ) ) )`)
+        .eq('curriculum_id', curriculum.id)
+        .order('order_index');
+
+    const sortedPhases = (phases || []).map((p: any) => ({
+        ...p,
+        modules: (p.modules || []).sort((a: any, b: any) => a.order_index - b.order_index),
+    }));
+
+    return { ...curriculum, phases: sortedPhases };
+}
+
+export async function createCurriculum(batchId: string, name: string) {
+    const { data, error } = await supabaseAdmin.from('curricula').insert({ batch_id: batchId, name }).select().single();
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true, curriculum: data };
+}
+
+export async function createPhase(input: { curriculum_id: string; name: string; description?: string; order_index: number; unlock_min_score?: number | null }) {
+    const { error } = await supabaseAdmin.from('phases').insert(input);
+    if (error) return { error: error.message };
+    await logAction('Created phase', input.curriculum_id, 'phase', input);
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function updatePhase(id: string, updates: Record<string, any>) {
+    const { error } = await supabaseAdmin.from('phases').update(updates).eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function deletePhase(id: string) {
+    const { error } = await supabaseAdmin.from('phases').delete().eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function createModule(input: { phase_id: string; name: string; description?: string; order_index: number; submission_type?: string; submission_instructions?: string }) {
+    const { data, error } = await supabaseAdmin.from('modules').insert(input).select().single();
+    if (error) return { error: error.message };
+    await logAction('Created module', data.id, 'module', input);
+    revalidatePath('/admin/curriculum');
+    return { success: true, module: data };
+}
+
+export async function updateModule(id: string, updates: Record<string, any>) {
+    const { error } = await supabaseAdmin.from('modules').update(updates).eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function deleteModule(id: string) {
+    const { error } = await supabaseAdmin.from('modules').delete().eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function upsertRubric(input: { id?: string; module_id: string; audience: 'fellow' | 'reporting'; name: string; criteria: RubricCriterion[] }) {
+    if (input.id) {
+        const { error } = await supabaseAdmin.from('rubrics').update({ name: input.name, criteria: input.criteria }).eq('id', input.id);
+        if (error) return { error: error.message };
+    } else {
+        const { error } = await supabaseAdmin.from('rubrics').insert({
+            module_id: input.module_id, audience: input.audience, name: input.name, criteria: input.criteria,
+        });
+        if (error) return { error: error.message };
+    }
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function deleteRubric(id: string) {
+    const { error } = await supabaseAdmin.from('rubrics').delete().eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function addModuleEvaluator(moduleId: string, evaluatorType: 'mentor' | 'volunteer', userId?: string) {
+    const { error } = await supabaseAdmin.from('module_evaluators').insert({ module_id: moduleId, evaluator_type: evaluatorType, user_id: userId ?? null });
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+export async function removeModuleEvaluator(id: string) {
+    const { error } = await supabaseAdmin.from('module_evaluators').delete().eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/curriculum');
+    return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SUBMISSIONS & EVALUATIONS
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getAllModules() {
+    const { data, error } = await supabaseAdmin
+        .from('modules')
+        .select(`id, name, phase:phases ( name, curriculum:curricula ( batch_id ) )`)
+        .order('order_index');
+    if (error) throw error;
+    return data;
+}
+
+export async function getSubmissions(filters: { moduleId?: string; fellowId?: string } = {}) {
+    let query = supabaseAdmin
+        .from('submissions')
+        .select(`*, fellow:fellows ( name, email ), module:modules ( name, phase_id, rubrics ( * ) ), evaluations ( *, evaluator:users ( full_name, email ) )`)
+        .order('submitted_at', { ascending: false });
+    if (filters.moduleId) query = query.eq('module_id', filters.moduleId);
+    if (filters.fellowId) query = query.eq('fellow_id', filters.fellowId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data;
+}
+
+export async function createSubmission(input: { fellow_id: string; module_id: string; file_url?: string; link_url?: string; notes?: string }) {
+    const { data, error } = await supabaseAdmin.from('submissions').insert(input).select().single();
+    if (error) return { error: error.message };
+    await logAction('Created submission', data.id, 'submission', input);
+    revalidatePath('/admin/submissions');
+    return { success: true, submission: data };
+}
+
+export async function scoreSubmission(input: {
+    submission_id: string; rubric_id: string; scores: EvaluationScore[];
+    total_score: number; fellow_feedback?: string; reporting_notes?: string;
+}) {
+    const user = await getCurrentUser();
+    const { error } = await supabaseAdmin.from('evaluations').insert({
+        submission_id: input.submission_id,
+        rubric_id: input.rubric_id,
+        evaluator_id: user?.id ?? null,
+        scores: input.scores,
+        total_score: input.total_score,
+        fellow_feedback: input.fellow_feedback,
+        reporting_notes: input.reporting_notes,
+    });
+    if (error) return { error: error.message };
+
+    await supabaseAdmin.from('submissions').update({ status: 'scored' }).eq('id', input.submission_id);
+    await logAction('Scored submission', input.submission_id, 'submission', { total_score: input.total_score });
+    revalidatePath('/admin/submissions');
+    return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EMAIL TEMPLATES
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getEmailTemplates() {
+    const { data, error } = await supabaseAdmin.from('email_templates').select('*').order('trigger_event');
+    if (error) throw error;
+    return data;
+}
+
+export async function upsertEmailTemplate(input: { id?: string; trigger_event: string; name: string; subject: string; body: string; is_active?: boolean }) {
+    if (input.id) {
+        const { error } = await supabaseAdmin.from('email_templates').update({ ...input, updated_at: new Date().toISOString() }).eq('id', input.id);
+        if (error) return { error: error.message };
+    } else {
+        const { error } = await supabaseAdmin.from('email_templates').insert(input);
+        if (error) return { error: error.message };
+    }
+    revalidatePath('/admin/email-templates');
+    return { success: true };
+}
+
+export async function deleteEmailTemplate(id: string) {
+    const { error } = await supabaseAdmin.from('email_templates').delete().eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/email-templates');
+    return { success: true };
+}
+
+export async function sendTemplatedEmailToFellow(templateId: string, fellowId: string, extraPlaceholders: Record<string, string> = {}) {
+    const user = await getCurrentUser();
+    const { data: template } = await supabaseAdmin.from('email_templates').select('*').eq('id', templateId).single();
+    const { data: fellow } = await supabaseAdmin.from('fellows').select(`*, batch:batches ( name )`).eq('id', fellowId).single();
+    if (!template || !fellow) return { error: 'Template or fellow not found.' };
+
+    try {
+        const { subject } = await sendTemplatedEmail({
+            to: fellow.email,
+            subjectTemplate: template.subject,
+            bodyTemplate: template.body,
+            placeholders: {
+                fellow_name: fellow.name,
+                batch_name: fellow.batch?.name ?? '',
+                mentor_name: user?.full_name ?? '',
+                ...extraPlaceholders,
+            },
+        });
+
+        await supabaseAdmin.from('email_log').insert({
+            fellow_id: fellowId, template_id: templateId, subject, sent_to: fellow.email, sent_by: user?.id ?? null,
+        });
+        await logAction('Sent templated email', fellowId, 'fellow', { template: template.name });
+        revalidatePath(`/admin/fellows/${fellowId}`);
+        return { success: true };
+    } catch (error: any) {
+        return { error: error.message };
+    }
+}
+
+export async function getFellowEmailLog(fellowId: string) {
+    const { data, error } = await supabaseAdmin.from('email_log').select('*').eq('fellow_id', fellowId).order('sent_at', { ascending: false });
+    if (error) throw error;
+    return data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getDashboardStats() {
+    const [{ count: fellowCount }, { count: activeBatches }, { count: pendingOnboarding }, { count: pendingSubmissions }] = await Promise.all([
+        supabaseAdmin.from('fellows').select('id', { count: 'exact', head: true }),
+        supabaseAdmin.from('batches').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
+        supabaseAdmin.from('fellows').select('id', { count: 'exact', head: true }).eq('status', 'Onboarding'),
+        supabaseAdmin.from('submissions').select('id', { count: 'exact', head: true }).neq('status', 'scored'),
+    ]);
+    return {
+        fellowCount: fellowCount ?? 0,
+        activeBatches: activeBatches ?? 0,
+        pendingOnboarding: pendingOnboarding ?? 0,
+        pendingSubmissions: pendingSubmissions ?? 0,
+    };
+}
+
+export async function getRecentAuditLogs(limit = 15) {
+    const { data, error } = await supabaseAdmin.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(limit);
+    if (error) throw error;
+    return data;
+}
